@@ -20,6 +20,10 @@ import java.util.List;
 public class RequestsHandler {
 
     private final MemorySegmentDao dao;
+    private static final Response NOT_FOUND_RESPONSE = new Response(
+            Response.NOT_FOUND,
+            Response.EMPTY
+    );
 
     public RequestsHandler(MemorySegmentDao dao) {
         this.dao = dao;
@@ -85,12 +89,14 @@ public class RequestsHandler {
     }
 
     public Response handleGet(@Param(value = "id") String id) {
-        BaseEntry<MemorySegment> entry = dao.get(HttpServerUtils.INSTANCE.fromString(id));
+        BaseEntry<MemorySegment> entry;
+        try {
+            entry = dao.get(HttpServerUtils.INSTANCE.fromString(id));
+        } catch (Exception e) {
+            return NOT_FOUND_RESPONSE;
+        }
         if (entry == null) {
-            return new Response(
-                    Response.NOT_FOUND,
-                    Response.EMPTY
-            );
+            return NOT_FOUND_RESPONSE;
         }
         boolean cond = entry.value() == null;
         ByteBuffer timestamp = ByteBuffer
@@ -113,13 +119,15 @@ public class RequestsHandler {
     }
 
     public Response handleGetRange(@Param(value = "start") String start, @Param(value = "end") String end) {
-        Iterator<BaseEntry<MemorySegment>> entryIterator = dao.get(HttpServerUtils.INSTANCE.fromString(start),
-                end == null || end.isEmpty() ? null : HttpServerUtils.INSTANCE.fromString(end));
+        Iterator<BaseEntry<MemorySegment>> entryIterator;
+        try {
+            entryIterator = dao.get(HttpServerUtils.INSTANCE.fromString(start),
+                    end == null || end.isEmpty() ? null : HttpServerUtils.INSTANCE.fromString(end));
+        } catch (Exception e) {
+            return NOT_FOUND_RESPONSE;
+        }
         if (entryIterator == null) {
-            return new Response(
-                    Response.NOT_FOUND,
-                    Response.EMPTY
-            );
+            return NOT_FOUND_RESPONSE;
         }
 
         if (!entryIterator.hasNext()) {
@@ -132,11 +140,15 @@ public class RequestsHandler {
     }
 
     public Response handlePut(Request request, @Param(value = "id") String id) {
-        dao.upsert(new BaseEntry<>(
-                HttpServerUtils.INSTANCE.fromString(id),
-                MemorySegment.ofArray(request.getBody()),
-                System.currentTimeMillis()
-        ));
+        try {
+            dao.upsert(new BaseEntry<>(
+                    HttpServerUtils.INSTANCE.fromString(id),
+                    MemorySegment.ofArray(request.getBody()),
+                    System.currentTimeMillis()
+            ));
+        } catch (Exception e) {
+            return NOT_FOUND_RESPONSE;
+        }
         return new Response(
                 Response.CREATED,
                 Response.EMPTY
@@ -144,11 +156,15 @@ public class RequestsHandler {
     }
 
     public Response handleDelete(@Param(value = "id") String id) {
-        dao.upsert(new BaseEntry<>(
-                HttpServerUtils.INSTANCE.fromString(id),
-                null,
-                System.currentTimeMillis()
-        ));
+        try {
+            dao.upsert(new BaseEntry<>(
+                    HttpServerUtils.INSTANCE.fromString(id),
+                    null,
+                    System.currentTimeMillis()
+            ));
+        } catch (Exception e) {
+            return NOT_FOUND_RESPONSE;
+        }
         return new Response(
                 Response.ACCEPTED,
                 Response.EMPTY

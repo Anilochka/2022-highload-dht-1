@@ -51,10 +51,16 @@ public class CircuitBreakerImpl {
     }
 
     protected void putNodesIllnessInfo(String node, boolean isIll) {
+        if (!serviceConfig.clusterUrls().contains(node)) {
+            throw new IllegalArgumentException();
+        }
         nodesIllness.put(node, isIll);
     }
 
     protected boolean isNodeIll(String nodeUrl) {
+        if (!serviceConfig.clusterUrls().contains(nodeUrl)) {
+            throw new IllegalArgumentException();
+        }
         return nodesIllness.get(nodeUrl);
     }
 
