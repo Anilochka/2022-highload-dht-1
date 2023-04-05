@@ -72,15 +72,18 @@ public class DemoHttpServer extends HttpServer {
 
         String fromString = request.getParameter("from=");
         String ackString = request.getParameter("ack=");
-        int from = fromString == null || fromString.isEmpty() ? serviceConfig.clusterUrls().size()
-                : Integer.parseInt(fromString);
-        int ack = ackString == null || ackString.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackString);
+        int from = getFrom(fromString);
+        int ack = getAck(ackString, from);
 
         if (ack == 0 || ack > from || from > serviceConfig.clusterUrls().size()) {
             tryToSendResponseWithEmptyBody(session, Response.BAD_REQUEST);
             return;
         }
 
+        executeRequestInWorkersPool(request, session, key, from, ack);
+    }
+
+    private void executeRequestInWorkersPool(Request request, HttpSession session, String key, int from, int ack) {
         workersPool.execute(() -> {
             try {
                 executeHandlingRequest(request, session, key, ack, from);
@@ -92,6 +95,15 @@ public class DemoHttpServer extends HttpServer {
                 tryToSendResponseWithEmptyBody(session, Response.INTERNAL_ERROR);
             }
         });
+    }
+
+    private static int getAck(String ackString, int from) {
+        return ackString == null || ackString.isEmpty() ? from / 2 + 1 : Integer.parseInt(ackString);
+    }
+
+    private int getFrom(String fromString) {
+        return fromString == null || fromString.isEmpty() ? serviceConfig.clusterUrls().size()
+                : Integer.parseInt(fromString);
     }
 
     private void handleRangeRequest(Request request, HttpSession session) {
