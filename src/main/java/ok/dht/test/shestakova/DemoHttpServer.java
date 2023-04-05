@@ -28,15 +28,25 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 public class DemoHttpServer extends HttpServer {
 
+    public static final String INTERNAL_KEY = "internal";
     private static final Logger LOGGER = LoggerFactory.getLogger(DemoHttpServer.class);
     private static final String RESPONSE_NOT_ENOUGH_REPLICAS = "504 Not Enough Replicas";
     private static final int NOT_FOUND_CODE = 404;
     public static final String INTERNAL_ERROR_IN_SERVER_MSG = "Internal error in server {}";
+    public static final String ID = "id=";
+    public static final String PATH = "/v0/entities";
+    public static final String FROM = "from=";
+    public static final String ACK = "ack=";
+    public static final String START = "start=";
+    public static final String END = "end=";
+    public static final String SERVICE_MESSAGE_PATH = "/service/message";
+    public static final String METHOD_NOT_ALLOWED_MSG = "Method not allowed {} method: {}";
+    public static final String INTERNAL_ERROR_IN_SERVER_CF_MSG = "Internal error in server {} during working with CF";
+    public static final String ERROR_WHILE_SENDING_RESPONSE_MSG = "Error while sending response in server {}";
     private final HttpClient httpClient;
     private final ServiceConfig serviceConfig;
     private final ExecutorService workersPool;
     private final CircuitBreakerImpl circuitBreaker;
-    private final MemorySegmentDao dao;
     private final RequestsHandler requestsHandler;
 
     public DemoHttpServer(HttpServerConfig config, HttpClient httpClient, ExecutorService workersPool,
@@ -46,19 +56,18 @@ public class DemoHttpServer extends HttpServer {
         this.serviceConfig = serviceConfig;
         this.workersPool = workersPool;
         this.circuitBreaker = new CircuitBreakerImpl(serviceConfig, httpClient);
-        this.dao = dao;
-        this.requestsHandler = new RequestsHandler(this.dao);
+        this.requestsHandler = new RequestsHandler(dao);
     }
 
     @Override
     public void handleRequest(Request request, HttpSession session) {
         String requestPath = request.getPath();
-        if ("/v0/entities".equals(requestPath)) {
+        if (PATH.equals(requestPath)) {
             handleRangeRequest(request, session);
             return;
         }
 
-        String key = request.getParameter("id=");
+        String key = request.getParameter(ID);
         if (key == null || key.isEmpty()) {
             tryToSendResponseWithEmptyBody(session, Response.BAD_REQUEST);
             return;
@@ -70,10 +79,8 @@ public class DemoHttpServer extends HttpServer {
             return;
         }
 
-        String fromString = request.getParameter("from=");
-        String ackString = request.getParameter("ack=");
-        int from = getFrom(fromString);
-        int ack = getAck(ackString, from);
+        int from = getFrom(request.getParameter(FROM));
+        int ack = getAck(request.getParameter(ACK), from);
 
         if (ack == 0 || ack > from || from > serviceConfig.clusterUrls().size()) {
             tryToSendResponseWithEmptyBody(session, Response.BAD_REQUEST);
@@ -88,7 +95,7 @@ public class DemoHttpServer extends HttpServer {
             try {
                 executeHandlingRequest(request, session, key, ack, from);
             } catch (MethodNotAllowedException e) {
-                LOGGER.error("Method not allowed {} method: {}", serviceConfig.selfUrl(), request.getMethod());
+                LOGGER.error(METHOD_NOT_ALLOWED_MSG, serviceConfig.selfUrl(), request.getMethod());
                 tryToSendResponseWithEmptyBody(session, Response.METHOD_NOT_ALLOWED);
             } catch (IOException e) {
                 LOGGER.error(INTERNAL_ERROR_IN_SERVER_MSG, serviceConfig.selfUrl());
@@ -107,8 +114,8 @@ public class DemoHttpServer extends HttpServer {
     }
 
     private void handleRangeRequest(Request request, HttpSession session) {
-        String start = request.getParameter("start=");
-        String end = request.getParameter("end=");
+        String start = request.getParameter(START);
+        String end = request.getParameter(END);
         if (start == null || start.isEmpty()) {
             tryToSendResponseWithEmptyBody(session, Response.BAD_REQUEST);
             return;
@@ -128,7 +135,7 @@ public class DemoHttpServer extends HttpServer {
 
     private void executeHandlingRequest(Request request, HttpSession session, String key, int ack, int from)
             throws IOException {
-        if (request.getHeader("internal") != null || request.getPath().contains("/service/message")) {
+        if (request.getHeader(INTERNAL_KEY) != null || request.getPath().contains(SERVICE_MESSAGE_PATH)) {
             Response response = requestsHandler.handleInternalRequest(request, circuitBreaker);
             if (response == null) {
                 tryToSendResponseWithEmptyBody(session, Response.SERVICE_UNAVAILABLE);
@@ -247,7 +254,7 @@ public class DemoHttpServer extends HttpServer {
 
     private void checkCompletableFuture(CompletableFuture<?> completableFuture) {
         if (completableFuture == null) {
-            LOGGER.error("Internal error in server {} during working with CF", serviceConfig.selfUrl());
+            LOGGER.error(DemoHttpServer.INTERNAL_ERROR_IN_SERVER_CF_MSG, serviceConfig.selfUrl());
         }
     }
 
@@ -258,7 +265,7 @@ public class DemoHttpServer extends HttpServer {
                     Response.EMPTY
             ));
         } catch (IOException e) {
-            LOGGER.error("Error while sending response in server {}", serviceConfig.selfUrl());
+            LOGGER.error(ERROR_WHILE_SENDING_RESPONSE_MSG, serviceConfig.selfUrl());
         }
     }
 
