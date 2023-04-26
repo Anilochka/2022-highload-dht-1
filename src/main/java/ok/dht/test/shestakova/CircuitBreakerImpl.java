@@ -1,9 +1,5 @@
 package ok.dht.test.shestakova;
 
-import ok.dht.ServiceConfig;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -15,6 +11,11 @@ import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import ok.dht.ServiceConfig;
 
 public class CircuitBreakerImpl {
 
@@ -52,13 +53,16 @@ public class CircuitBreakerImpl {
 
     protected void putNodesIllnessInfo(String node, boolean isIll) {
         if (!serviceConfig.clusterUrls().contains(node)) {
+            LOGGER.error("Trying to put node, that does not exist: {}", node);
             throw new IllegalArgumentException();
         }
+        LOGGER.debug("Put node illness info: {} - {}", node, isIll);
         nodesIllness.put(node, isIll);
     }
 
     protected boolean isNodeIll(String nodeUrl) {
         if (!serviceConfig.clusterUrls().contains(nodeUrl)) {
+            LOGGER.error("Requested node does not exist: {}", nodeUrl);
             throw new IllegalArgumentException();
         }
         return nodesIllness.get(nodeUrl);
@@ -79,6 +83,7 @@ public class CircuitBreakerImpl {
                 isIll.set(true);
                 nodesIllness.put(serviceConfig.selfUrl(), true);
                 tellToOtherNodesAboutIllness(true);
+                LOGGER.info("Node became ill: {}", serviceConfig.selfUrl());
             }
             fallenRequestCount.getAndSet(0);
             illPeriodsCounter++;
@@ -89,6 +94,7 @@ public class CircuitBreakerImpl {
                 nodesIllness.put(serviceConfig.selfUrl(), false);
                 illPeriodsCounter = 0;
                 tellToOtherNodesAboutIllness(false);
+                LOGGER.info("Node became healthy: {}", serviceConfig.selfUrl());
             }
         }
 
@@ -105,6 +111,7 @@ public class CircuitBreakerImpl {
                                     .build(),
                             HttpResponse.BodyHandlers.ofByteArray()
                     );
+                    LOGGER.debug("Send illnesses info from {} to {} : {}", serviceConfig.selfUrl(), nodeUrl, isIll);
                 } catch (IOException | InterruptedException e) {
                     LOGGER.error("Error while sending health-request from " + serviceConfig.selfUrl());
                 }

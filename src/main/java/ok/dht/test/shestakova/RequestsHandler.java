@@ -1,5 +1,16 @@
 package ok.dht.test.shestakova;
 
+import java.net.URI;
+import java.net.http.HttpRequest;
+import java.nio.ByteBuffer;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Iterator;
+import java.util.List;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import jdk.incubator.foreign.MemorySegment;
 import ok.dht.ServiceConfig;
 import ok.dht.test.shestakova.dao.MemorySegmentDao;
@@ -9,17 +20,10 @@ import one.nio.http.Param;
 import one.nio.http.Request;
 import one.nio.http.Response;
 
-import java.net.URI;
-import java.net.http.HttpRequest;
-import java.nio.ByteBuffer;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Iterator;
-import java.util.List;
-
 public class RequestsHandler {
 
     private final MemorySegmentDao dao;
+    private static final Logger LOGGER = LoggerFactory.getLogger(RequestsHandler.class);
     private static final Response NOT_FOUND_RESPONSE = new Response(
             Response.NOT_FOUND,
             Response.EMPTY
@@ -47,6 +51,7 @@ public class RequestsHandler {
             throws MethodNotAllowedException {
         if (request.getMethod() != Request.METHOD_GET && request.getMethod() != Request.METHOD_PUT
                 && request.getMethod() != Request.METHOD_DELETE) {
+            LOGGER.error("Illegal method: {}", request.getMethod());
             throw new MethodNotAllowedException();
         }
 
@@ -60,6 +65,7 @@ public class RequestsHandler {
             httpRequest.DELETE();
         }
         httpRequest.setHeader("internal", "true");
+        LOGGER.debug("Build internal request with method num = {}", requestMethod);
         return httpRequest.build();
     }
 
@@ -74,6 +80,7 @@ public class RequestsHandler {
             if (requestPath.contains("/service/message")) {
                 circuitBreaker.putNodesIllnessInfo(Arrays.toString(request.getBody()),
                         "/service/message/ill".equals(requestPath));
+                LOGGER.info("Got nodes illnesses info: {}", request.getBody());
                 return null;
             }
             response = handlePut(request, id);
@@ -84,7 +91,9 @@ public class RequestsHandler {
                     Response.METHOD_NOT_ALLOWED,
                     Response.EMPTY
             );
+            LOGGER.error("Method not allowed: {}", methodNum);
         }
+        LOGGER.debug("Handling internal request with method num = {}, key = {}", methodNum, id);
         return response;
     }
 
@@ -93,9 +102,11 @@ public class RequestsHandler {
         try {
             entry = dao.get(HttpServerUtils.INSTANCE.fromString(id));
         } catch (Exception e) {
+            LOGGER.error("Error while doing GET from db");
             return NOT_FOUND_RESPONSE;
         }
         if (entry == null) {
+            LOGGER.debug("There is no entry with key = {} in DB", id);
             return NOT_FOUND_RESPONSE;
         }
         boolean cond = entry.value() == null;
@@ -107,6 +118,7 @@ public class RequestsHandler {
         if (!cond) {
             value.put(entry.value().toByteArray());
         }
+        LOGGER.debug("GET-response was created");
         return new Response(
                 Response.OK,
                 ByteBuffer
@@ -124,18 +136,22 @@ public class RequestsHandler {
             entryIterator = dao.get(HttpServerUtils.INSTANCE.fromString(start),
                     end == null || end.isEmpty() ? null : HttpServerUtils.INSTANCE.fromString(end));
         } catch (Exception e) {
+            LOGGER.error("Error while doing GET RANGE from db");
             return NOT_FOUND_RESPONSE;
         }
         if (entryIterator == null) {
+            LOGGER.error("Entry iterator is NULL");
             return NOT_FOUND_RESPONSE;
         }
 
         if (!entryIterator.hasNext()) {
+            LOGGER.debug("There is no entry in range with start = {}, end = {} in DB", start, end);
             return new Response(
                     Response.OK,
                     Response.EMPTY
             );
         }
+        LOGGER.debug("Chunked response was created");
         return new ChunkedResponse(Response.OK, entryIterator);
     }
 
@@ -147,8 +163,10 @@ public class RequestsHandler {
                     System.currentTimeMillis()
             ));
         } catch (Exception e) {
+            LOGGER.error("Error while doing PUT to db");
             return NOT_FOUND_RESPONSE;
         }
+        LOGGER.debug("Entry was put to DB");
         return new Response(
                 Response.CREATED,
                 Response.EMPTY
@@ -163,8 +181,10 @@ public class RequestsHandler {
                     System.currentTimeMillis()
             ));
         } catch (Exception e) {
+            LOGGER.error("Error while doing DELETE from db");
             return NOT_FOUND_RESPONSE;
         }
+        LOGGER.debug("Entry was deleted to DB");
         return new Response(
                 Response.ACCEPTED,
                 Response.EMPTY
